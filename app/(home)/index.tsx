@@ -12,7 +12,13 @@ export default function TabOneScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>Tab One</Text>
 
-      <Link href="/reader" asChild>
+      <Link
+        href={{
+          pathname: "reader/[item]",
+          params: { item: "test_book" },
+        }}
+        asChild
+      >
         <Button title="Open reader" />
       </Link>
     </View>

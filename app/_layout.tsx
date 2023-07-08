@@ -54,7 +54,7 @@ function RootLayoutNav() {
       <Stack>
         <Stack.Screen name="(home)" options={{ headerShown: false }} />
         <Stack.Screen
-          name="reader"
+          name="reader/[item]"
           options={{
             presentation: "card",
             animation: "fade",
