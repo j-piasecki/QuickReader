@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet } from "react-native";
+import { View, TextInput, StyleSheet, useColorScheme } from "react-native";
 import { Readable } from "@/hooks/useReadable";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, {
@@ -7,131 +7,132 @@ import Animated, {
   withTiming,
   runOnJS,
   withDelay,
+  SharedValue,
+  useAnimatedProps,
+  Easing,
 } from "react-native-reanimated";
 import { useEffect, useState } from "react";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
-const WORDS_SIZE = 31;
+const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
+
 const FONT_SIZE = 24;
-const CURRENT_WORD_MULTIPLIER = 0.5;
 
 export default function ReaderComponent(props: { readable: Readable }) {
-  const [index, setIndex] = useState(props.readable.index);
-  const [words, setWords] = useState(new Array(WORDS_SIZE).fill(""));
-  const [layout, setLayout] = useState({ width: 0, height: 0 });
+  const [wordsCount, setWordsCount] = useState(0);
+  const [wordHeight, setWordHeight] = useState(0);
+  const words = useSharedValue(props.readable.words);
+  const index = useSharedValue(props.readable.index);
 
-  const animationProgress = useSharedValue(0);
-  const animationRunning = useSharedValue(false);
-
-  const restWordsStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ translateY: -animationProgress.value * layout.height }],
-      opacity: 0.5,
-    };
-  });
-
-  const currentWordStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateY: -animationProgress.value * layout.height },
-        { scale: CURRENT_WORD_MULTIPLIER * (1 - animationProgress.value) + 1 },
-      ],
-      opacity: (1 - animationProgress.value) * 0.5 + 0.5,
-    };
-  });
-
-  const nextWordStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { translateY: -animationProgress.value * layout.height },
-        { scale: CURRENT_WORD_MULTIPLIER * animationProgress.value + 1 },
-      ],
-      opacity: animationProgress.value * 0.5 + 0.5,
-    };
-  });
-
-  const offset = Math.floor(WORDS_SIZE / 2);
-
-  function nextWord() {
-    setIndex((prev) => prev + 1);
-    animationProgress.value = 0;
-
-    if (animationRunning.value) {
-      animationProgress.value = withDelay(
-        50,
-        withTiming(1, { duration: 75 }, () => {
-          runOnJS(nextWord)();
-        })
-      );
-    }
-  }
-
-  const gesture = Gesture.Pan()
-    .onBegin(() => {
-      animationRunning.value = true;
-      animationProgress.value = withTiming(1, { duration: 75 }, () => {
-        runOnJS(nextWord)();
-      });
-    })
-    .onFinalize(() => {
-      animationRunning.value = false;
+  const gesture = Gesture.Tap().onStart((e) => {
+    index.value = withTiming(index.value + 1, {
+      duration: 100,
     });
-
-  useEffect(() => {
-    const newWords = new Array(WORDS_SIZE).fill("");
-
-    for (let i = 0; i < WORDS_SIZE; i++) {
-      const word = props.readable.words[index + i - offset];
-
-      if (word) {
-        newWords[i] = word;
-      }
-    }
-
-    setWords(newWords);
-  }, [index]);
+  });
 
   return (
     <GestureDetector gesture={gesture}>
-      <SafeAreaView style={styles.container}>
-        <View style={{ width: "100%", height: "100%" }}>
-          <View style={[styles.container, { flexDirection: "column-reverse" }]}>
-            {words
-              .slice(0, offset)
-              .reverse()
-              .map((word, i) => {
-                return (
-                  <Animated.View key={i} style={restWordsStyle}>
-                    <Text style={styles.wordStyle}>{word}</Text>
-                  </Animated.View>
-                );
-              })}
+      <SafeAreaView
+        style={styles.container}
+        onLayout={(e) => {
+          const count = Math.ceil(e.nativeEvent.layout.height / FONT_SIZE);
+          setWordsCount(count % 2 === 0 ? count + 1 : count);
+        }}
+      >
+        <View
+          style={{ width: "100%", height: "100%", justifyContent: "center" }}
+          pointerEvents="none"
+        >
+          <View style={{ flex: 1, flexDirection: "column-reverse" }}>
+            {new Array(Math.floor(wordsCount / 2)).fill(0).map((_, i) => (
+              <AnimatedWord
+                words={words}
+                index={index}
+                key={i}
+                offset={-(i + 1)}
+                wordHeight={wordHeight}
+              />
+            ))}
           </View>
-          <View style={{ alignItems: "center" }}>
-            <Animated.View
-              style={currentWordStyle}
-              onLayout={(e) => {
-                setLayout(e.nativeEvent.layout);
-              }}
-            >
-              <Text style={[styles.wordStyle]}>{words[offset]}</Text>
-            </Animated.View>
-          </View>
-          <View style={styles.container}>
-            {words.slice(offset + 1).map((word, i) => {
-              return (
-                <Animated.View
-                  key={i}
-                  style={i === 0 ? nextWordStyle : restWordsStyle}
-                >
-                  <Text style={styles.wordStyle}>{word}</Text>
-                </Animated.View>
-              );
-            })}
+          <AnimatedWord
+            words={words}
+            index={index}
+            offset={0}
+            wordHeight={wordHeight}
+            onLayout={(e) => {
+              setWordHeight(e.nativeEvent.layout.height);
+            }}
+          />
+          <View style={{ flex: 1, flexDirection: "column" }}>
+            {new Array(Math.floor(wordsCount / 2)).fill(0).map((_, i) => (
+              <AnimatedWord
+                words={words}
+                index={index}
+                key={i}
+                offset={i + 1}
+                wordHeight={wordHeight}
+              />
+            ))}
           </View>
         </View>
       </SafeAreaView>
     </GestureDetector>
+  );
+}
+
+function AnimatedWord(props: {
+  words: SharedValue<string[]>;
+  index: SharedValue<number>;
+  offset: number;
+  wordHeight: number;
+  onLayout?: (e: any) => void;
+}) {
+  const theme = useColorScheme();
+  const animatedProps = useAnimatedProps(() => {
+    return {
+      text: props.words.value[Math.floor(props.index.value) + props.offset],
+    } as any;
+  });
+
+  const style = useAnimatedStyle(() => {
+    const progress = props.index.value - Math.floor(props.index.value);
+    let opacity = 0.5;
+    let scale = 1;
+    let offset = -props.wordHeight * progress;
+
+    if (props.offset === 0) {
+      opacity = (1 - progress) * 0.5 + 0.5;
+      scale = (1 - progress) * 0.5 + 1;
+      console.log(progress);
+    } else if (props.offset === 1) {
+      opacity = progress * 0.5 + 0.5;
+      scale = progress * 0.5 + 1;
+    }
+
+    return {
+      opacity: opacity,
+      transform: [{ translateY: offset }, { scale: scale }],
+    };
+  });
+
+  return (
+    <AnimatedTextInput
+      underlineColorAndroid="transparent"
+      style={[
+        {
+          color: theme === "dark" ? "white" : "black",
+          fontSize: FONT_SIZE,
+          textAlign: "center",
+          paddingHorizontal: 16,
+        },
+        style,
+      ]}
+      value={props.words.value[props.index.value + props.offset]}
+      multiline={true}
+      editable={false}
+      animatedProps={animatedProps}
+      onLayout={props.onLayout}
+    />
   );
 }
 
